@@ -1,6 +1,6 @@
 /**
  * 검객 (치즈의 방울) 스킬 — docs/GAME_PLAN.md §6.1
- * 단축키: Z 발도 일섬 / X 회오리 할퀴기 / C 승천 송곳니 / V 천냥 난무
+ * 스킬1 발도 일섬 / 스킬2 회오리 할퀴기 / 스킬3 초승달 참격 / 궁극기 천냥 난무 (기본 키 Q E R F)
  * 공통 연출 재료: 집중선, 빛 폭발(flare), 원형 충격파(ringBurst), 빛기둥(beam), 슬로모션
  */
 import Phaser from 'phaser';
@@ -200,54 +200,123 @@ export const WHIRL: SkillDef = {
   },
 };
 
-/** C — 승천 송곳니: 빛기둥과 함께 솟구치며 올려베기, 적을 높이 띄운다 → 공중 콤보 연계 */
-export const RISING: SkillDef = {
-  id: 'blade_rising',
-  name: '승천 송곳니',
+/**
+ * 스킬3 — 초승달 참격: 칼을 크게 휘둘러 거대한 초승달 검기를 앞으로 날린다.
+ * 검기는 점점 커지며 380px 를 날아가고, 지나가는 적을 모두 한 번씩 벤다(관통). 끝에 닿으면 X자 참격 폭발.
+ */
+export const CRESCENT: SkillDef = {
+  id: 'blade_crescent',
+  name: '초승달 참격',
   slot: 'skill3',
   cooldown: 7,
   icon: 'blade_skill3',
-  desc: '빛기둥 올려베기 (180%) + 적을 높이 띄움, 함께 솟구쳐 공중 콤보 연계',
+  desc: '거대한 초승달 검기를 전방으로 날림 — 관통 베기 (180%) → 끝에서 참격 폭발 (100%)',
   cast(h) {
     const { scene, hero, combat } = h;
+    const cam = scene.cameras.main;
     const dir = h.dir();
-    h.lock(580);
+    h.lock(460);
     hero.anims.stop();
-    hero.setFrame('attack2_0');
-    h.callout('승천 송곳니!', '#ffe14a');
-    playFx(scene, 'fx_glint', hero.x + dir * 10, hero.y - 8, { add: true, scale: 1.6, depth: DEPTH.fxTop });
-    glowPulse(scene, hero.x, hero.y - 10, 0xffe14a, 0.4, 1.6, 200, 0.7);
-    scene.time.delayedCall(110, () => {
-      const x = hero.x;
-      const y0 = hero.y;
-      const fx = x + dir * 16;
-      hero.setFrame('attack2_2');
-      scene.tweens.add({ targets: hero, y: y0 - 110, duration: 280, ease: 'Quad.Out' });
-      scene.time.delayedCall(90, () => hero.setFrame('attack2_3'));
-      scene.time.addEvent({ delay: 35, repeat: 6, callback: () => h.afterimage(undefined, undefined, 0xffe0a0) });
-      h.speedlines(380, 0xffe14a);
+    hero.setFrame('attack_0');
+    h.callout('초승달 참격!', '#ffd08a');
+    // 기 모으기: 칼끝 반짝 + 금빛 응집
+    playFx(scene, 'fx_glint', hero.x - dir * 4, hero.y - 46, { add: true, scale: 1.8, depth: DEPTH.fxTop });
+    glowPulse(scene, hero.x, hero.y - 26, GOLD, 0.4, 2, 200, 0.7);
 
-      beam(scene, fx, y0 + 2, 0xffe14a, 1.8, 1.15);
-      playFx(scene, 'fx_slash', x + dir * 14, y0 - 36, { add: true, flip: dir < 0, scale: 2.4, origin: [0.5, 26 / 48], depth: DEPTH.fxTop }).setFlipY(true);
-      playFx(scene, 'fx_iai_line', fx, y0 - 72, { add: true, angle: dir > 0 ? -78 : -102, scaleX: 1.1, scaleY: 2, depth: DEPTH.fxTop });
-      flare(scene, fx, y0 - 40, 0xffe14a, 1.9);
-      ringBurst(scene, fx, y0 - 6, GOLD, 1.1);
-      playFx(scene, 'fx_dust', x, y0, { scale: 3, depth: DEPTH.fx });
-      glowPulse(scene, fx, y0 - 30, 0xffe14a, 0.7, 3, 360, 0.85);
-      burst(
-        scene,
-        'fx_sparkle',
-        fx,
-        y0 - 20,
-        50,
-        { angle: { min: 245, max: 295 }, speed: { min: 150, max: 420 }, lifespan: { min: 300, max: 650 }, alpha: { start: 1, end: 0 }, tint: [WHITE, 0xffe14a, GOLD] },
-        DEPTH.fxTop,
-        true,
-      );
-      screenFlash(scene, 0xfff1c8, 0.18, 120);
-      const rect = new Phaser.Geom.Rectangle(dir > 0 ? x - 10 : x - 62, y0 - 140, 72, 140);
-      const v = combat.hitRect(rect, { coef: 1.8, dir, power: 2, launch: 520, hitstop: 100, shake: [170, 0.01], sparkScale: 1.6, gauge: 5 }, x);
-      if (v.length) combat.slowmo(0.5, 160);
+    scene.time.delayedCall(140, () => {
+      hero.setFrame('attack_2');
+      scene.time.delayedCall(60, () => hero.setFrame('attack_3'));
+      h.afterimage(undefined, undefined, 0xffe0a0);
+      const y = hero.y - 26;
+      const x0 = hero.x + dir * 26;
+      let x = x0;
+      let scale = 1.15;
+      let trailT = 0;
+      let done = false;
+      const hitSet = new Set<HitTarget>();
+
+      // 발사 순간: 휘두른 궤적 + 섬광 + 흔들림
+      playFx(scene, 'fx_slash', hero.x + dir * 14, y - 4, { add: true, flip: dir < 0, scale: 2.2, origin: [0.5, 26 / 48], depth: DEPTH.fxTop });
+      flare(scene, x0, y, GOLD, 1.6);
+      ringBurst(scene, x0, y, GOLD, 0.9);
+      playFx(scene, 'fx_dust', hero.x + dir * 6, hero.y, { scale: 2.4, depth: DEPTH.fx });
+      screenFlash(scene, 0xfff1c8, 0.16, 110);
+      cam.shake(140, 0.008);
+      h.speedlines(320, GOLD);
+
+      const halo = scene.add.sprite(x, y, 'fx_wave', '0').setBlendMode(ADD).setTint(FLAME).setAlpha(0.45).setScale(scale * 1.35).setFlipX(dir < 0).setDepth(DEPTH.fx).play('fx_wave');
+      const wave = scene.add.sprite(x, y, 'fx_wave', '0').setBlendMode(ADD).setScale(scale).setFlipX(dir < 0).setDepth(DEPTH.fxTop).play('fx_wave');
+      const glow = scene.add.image(x, y, 'fx_glow').setBlendMode(ADD).setTint(GOLD).setScale(1.6, 2.6).setAlpha(0.55).setDepth(DEPTH.fx);
+      const embers = scene.add
+        .particles(0, 0, 'fx_ember', {
+          follow: wave,
+          y: { min: -46, max: 46 },
+          speedX: { min: -dir * 30, max: -dir * 170 },
+          speedY: { min: -50, max: 50 },
+          lifespan: { min: 280, max: 520 },
+          frequency: 8,
+          scale: { start: 2, end: 1 },
+          alpha: { start: 1, end: 0 },
+        })
+        .setDepth(DEPTH.fx);
+
+      const finish = () => {
+        done = true;
+        scene.events.off(UPDATE, step);
+        embers.stop();
+        scene.time.delayedCall(600, () => embers.destroy());
+        glow.destroy();
+        // 끝: X자 참격 폭발
+        playFx(scene, 'fx_cross', x, y, { add: true, scale: 3, depth: DEPTH.fxTop });
+        flare(scene, x, y, GOLD, 2.2);
+        ringBurst(scene, x, y, EMBER, 1.6);
+        glowPulse(scene, x, y, EMBER, 0.8, 3.6, 380, 0.9);
+        burst(
+          scene,
+          'fx_sparkle',
+          x,
+          y,
+          40,
+          { speed: { min: 80, max: 320 }, lifespan: { min: 300, max: 600 }, alpha: { start: 1, end: 0 }, tint: [WHITE, GOLD, EMBER] },
+          DEPTH.fxTop,
+          true,
+        );
+        cam.shake(160, 0.01);
+        combat.hitCircle(x, y, 58, { coef: 1.0, dir, power: 2.4, hitstop: 80, shake: [150, 0.01], sparkScale: 1.6, gauge: 4 });
+        scene.tweens.add({ targets: wave, scaleX: scale * 1.5, scaleY: scale * 0.6, alpha: 0, duration: 220, onComplete: () => wave.destroy() });
+        scene.tweens.add({ targets: halo, scaleX: scale * 2, scaleY: scale * 0.8, alpha: 0, duration: 260, onComplete: () => halo.destroy() });
+      };
+
+      const step = (_t: number, deltaMs: number) => {
+        if (done || combat.isStopped()) return;
+        const dt = Math.min(deltaMs, 50) / 1000;
+        x += dir * 980 * dt;
+        scale = Math.min(1.5, scale + dt * 0.9);
+        wave.setPosition(x, y).setScale(scale);
+        halo.setPosition(x - dir * 10, y).setScale(scale * 1.35);
+        glow.setPosition(x - dir * 6, y);
+        // 잔상: 지나간 자리에 주황 검기가 남았다 사라진다
+        trailT -= dt;
+        if (trailT <= 0) {
+          trailT = 0.03;
+          const ghost = scene.add.image(x - dir * 4, y, 'fx_wave', '0').setBlendMode(ADD).setTint(EMBER).setAlpha(0.5).setScale(scale).setFlipX(dir < 0).setDepth(DEPTH.fx);
+          scene.tweens.add({ targets: ghost, alpha: 0, scaleY: scale * 0.85, duration: 200, onComplete: () => ghost.destroy() });
+        }
+        // 관통: 처음 닿은 적마다 한 번씩 벤다
+        const halfH = 44 * scale;
+        const r = new Phaser.Geom.Rectangle(x - 18, y - halfH, 36, halfH * 2);
+        for (const t of combat.alive()) {
+          if (hitSet.has(t) || !Phaser.Geom.Intersects.RectangleToRectangle(r, t.bounds())) continue;
+          hitSet.add(t);
+          combat.hit(t, { coef: 1.8, dir, power: 2.2, hitstop: 60, shake: [120, 0.008], sparkScale: 1.8, gauge: 5 }, x - dir * 20);
+          playFx(scene, 'fx_cross', t.x, t.cy, { add: true, scale: 1.6, depth: DEPTH.fxTop });
+          flare(scene, t.x, t.cy, GOLD, 1.1);
+          if (hitSet.size === 1) combat.slowmo(0.5, 140);
+        }
+        if (Math.abs(x - x0) >= 380 || x < 12 || x > h.worldW - 12) finish();
+      };
+      scene.events.on(UPDATE, step);
+      scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => scene.events.off(UPDATE, step));
     });
   },
 };

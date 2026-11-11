@@ -124,13 +124,21 @@ const ICONS: IconDef[] = [
     },
   },
   {
-    id: 'blade_skill3', // 승천 송곳니
-    bg: ['#e0a030', '#9a6018', '#5a3008'],
+    id: 'blade_skill3', // 초승달 참격 — 밤하늘을 가르며 날아가는 금빛 초승달 검기
+    bg: ['#3a4a9a', '#222a66', '#10143a'],
     draw(c) {
-      c.lens(3, 18, 16, 2, 2.4, [WHITE, PALE, YELLOW]);
-      c.capsule(12, 7, 15, 3.5, 0.6, WHITE);
-      c.capsule(15, 3.5, 18, 7, 0.6, WHITE);
-      for (const x of [5, 9]) c.capsule(x, 17, x, 12, 0.4, PALE);
+      for (let y = 0; y < 20; y++) {
+        for (let x = 0; x < 20; x++) {
+          const dOut = 9 - Math.hypot(x + 0.5 - 7.5, y + 0.5 - 10);
+          const dIn = Math.hypot(x + 0.5 - 3, y + 0.5 - 10) - 9;
+          if (dOut < 0 || dIn < 0) continue;
+          const q = dOut / (dOut + dIn);
+          c.set(x, y, q < 0.34 ? WHITE : q < 0.68 ? PALE : YELLOW);
+        }
+      }
+      c.capsule(1, 6, 4.5, 6, 0.4, PALE);
+      c.capsule(0.5, 10, 6, 10, 0.5, WHITE);
+      c.capsule(1, 14, 4.5, 14, 0.4, PALE);
     },
   },
   {

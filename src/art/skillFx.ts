@@ -513,7 +513,48 @@ function vortexFrames(): PixelCanvas[] {
   return frames;
 }
 
+/**
+ * fx_wave: 초승달 참격 검기 (64x96, 오른쪽으로 볼록 = 진행 방향, 루프).
+ * 두 원의 차집합으로 초승달을 만들고, 앞날(볼록면)은 흰색 → 안쪽으로 갈수록 금빛·주황.
+ * 뒤쪽엔 디더로 흩어지는 잔광 + 프레임마다 흘러가는 속도선.
+ */
+function crescentWave(): PixelCanvas[] {
+  const R = 42;
+  const cy = 48;
+  return [0, 1, 2, 3].map((k) => {
+    const c = new PixelCanvas(64, 96);
+    const ox = 20; // 바깥 원 중심
+    const ix = 7 + (k % 2); // 안쪽 원 중심 (두께가 살짝 일렁임)
+    for (let y = 0; y < 96; y++) {
+      for (let x = 0; x < 64; x++) {
+        const px = x + 0.5;
+        const py = y + 0.5;
+        const dOut = R - Math.hypot(px - ox, py - cy);
+        const dIn = Math.hypot(px - ix, py - cy) - R;
+        if (dOut < 0) continue;
+        if (dIn >= 0) {
+          const q = dOut / (dOut + dIn); // 0 앞날 → 1 안쪽
+          c.set(x, y, q < 0.28 ? 1 : q < 0.55 ? 2 : q < 0.8 ? 3 : 4);
+        } else if (dIn > -9) {
+          // 뒤로 흩어지는 잔광 (멀수록 성기게)
+          const fade = 1 + dIn / 9; // 1 → 0
+          if (BAYER4[((y + k) % 4) * 4 + (x % 4)] < fade * 10) c.set(x, y, 4);
+        }
+      }
+    }
+    // 속도선: 검기 뒤쪽으로 흘러가는 가는 줄
+    for (const [ly, len] of [[22, 12], [36, 18], [48, 22], [60, 18], [74, 12]] as const) {
+      const yy = ly + (k % 2 ? 1 : -1);
+      const back = ix + Math.sqrt(Math.max(0, R * R - (yy + 0.5 - cy) ** 2)); // 초승달 뒤쪽(안쪽 원) 경계
+      const end = Math.floor(back) - 3 - ((k * 3) % 5);
+      for (let x = Math.max(0, end - len); x < end; x++) if (!c.get(x, yy)) c.set(x, yy, x > end - len / 2 ? 3 : 4);
+    }
+    return c;
+  });
+}
+
 export function registerSkillFx(scene: Phaser.Scene): void {
+  addAnimSheet(scene, 'fx_wave', crescentWave(), ['#000000', '#ffffff', '#fff1c8', '#ffd08a', '#ff9a4a'], 20, -1);
   addAnimSheet(scene, 'fx_vortex', vortexFrames(), ['#000000', '#ffffff', '#ffe08a', '#ff9a3a', '#e8452a'], 20, -1);
   addAnimSheet(scene, 'fx_flare', flareFrames(), GRAY_PAL, 26);
   addAnimSheet(scene, 'fx_beam', beamFrames(), GRAY_PAL, 18);
