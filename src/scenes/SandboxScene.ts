@@ -1,12 +1,15 @@
 /**
  * 샌드박스 — 1장 뒷골목 전투 프로토타입
- * - 이동: 걷기 / 방향키 두 번 = 달리기, 점프(코요테·버퍼·가변·2단), Shift 대시(무적), 발판 통과
- * - 전투: X 연타 3타 콤보, Q W E 스킬, R 궁극기, 피격·경직·무적·사망(목숨 -1)·부활
+ * - 이동: 관성 걷기, 점프(코요테·버퍼·가변·2단), 대시(Shift·우클릭·이동키 두 번, 무적), 발판 통과
+ * - 전투: 좌클릭 연타 3타 콤보(W+공격 = 위 공격), Q E R 스킬, F 궁극기 — 키는 키 설정(Esc 메뉴)에서 변경
+ * - 목숨은 하나: 쓰러지면 게임 오버 → 처음부터
  * - 적: 1장 4종 웨이브 + 오른쪽 끝 연습용 허수아비
  * 1/2 키로 직업 전환. URL 해시: #autoplay(-mage) 자동 이동, #showcase(-mage) 스킬 시연 (스모크 테스트용)
  */
 import Phaser from 'phaser';
 import { Controls, type Action } from '../input/Controls';
+import { raw } from '../input/RawInput';
+import type { MenuData } from './MenuScene';
 import { DEPTH, MOVE, TILE, VIEW_H, VIEW_W } from '../config/game';
 import { ACTIVE_FRAME, COMBO_ANIMS, HERO_FOOT_Y, HERO_FRAME_H } from '../art/sprites/cat';
 import { Combat, type HitTag } from '../combat/Combat';
@@ -110,6 +113,8 @@ export class SandboxScene extends Phaser.Scene implements HudSource {
   private autoDir = 1;
   private showcaseIdx = 0;
   private release: Action[] = [];
+  /** Esc 를 눌렀음 → 다음 update 에서 일시정지 메뉴 */
+  private wantMenu = false;
 
   constructor() {
     super('sandbox');
@@ -161,6 +166,7 @@ export class SandboxScene extends Phaser.Scene implements HudSource {
     this.frenzyUntil = 0;
     this.augmentFor = 0;
     this.boss = undefined;
+    this.wantMenu = false;
   }
 
   create(): void {
@@ -170,6 +176,20 @@ export class SandboxScene extends Phaser.Scene implements HudSource {
     this.anims.globalTimeScale = 1;
     this.physics.world.timeScale = 1;
     this.controls = new Controls(this);
+    // Esc: 일시정지 메뉴 (메뉴가 열려 있으면 메뉴 쪽이 먼저 가져간다)
+    const offEsc = raw.onPress((b) => {
+      if (b !== 'Escape' || !this.sys.isActive() || this.dead) return false;
+      this.wantMenu = true;
+      return true;
+    });
+    // 메뉴·증강 선택에서 돌아오면 그동안 누른 키는 '새로 누름'으로 치지 않는다
+    const onResume = () => this.controls.reset();
+    this.events.on(Phaser.Scenes.Events.RESUME, onResume);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      offEsc();
+      this.events.off(Phaser.Scenes.Events.RESUME, onResume);
+    });
+    if (location.hash.includes('keys')) this.time.delayedCall(600, () => this.openMenu('keys')); // 테스트용
     this.combat = new Combat(this);
     this.combat.stats = this.stats;
     this.combat.onHit = (t, dmg, o) => this.onCombatHit(t, dmg, o.tag);
@@ -374,6 +394,11 @@ export class SandboxScene extends Phaser.Scene implements HudSource {
   // ---------------------------------------------------------------------------
   update(_time: number, deltaMs: number): void {
     const dt = Math.min(deltaMs, 50) / 1000;
+    if (this.wantMenu) {
+      this.wantMenu = false;
+      this.openMenu();
+      return;
+    }
     if (this.autoplay) this.runAutoplay(dt);
     if (this.showcase) this.runShowcase(dt);
 
@@ -502,7 +527,7 @@ export class SandboxScene extends Phaser.Scene implements HudSource {
       else this.comboQueued = true;
     }
 
-    // 대시: Shift 또는 같은 방향키 두 번
+    // 대시: Shift·우클릭 또는 같은 이동키 두 번
     if ((c.pressed('dash') || c.dashTap !== 0) && this.dashCd <= 0) {
       this.attacking = false;
       this.dashDir = c.dashTap !== 0 ? c.dashTap : c.axisX !== 0 ? Math.sign(c.axisX) : this.cat.flipX ? -1 : 1;
@@ -874,8 +899,14 @@ export class SandboxScene extends Phaser.Scene implements HudSource {
   }
 
   // ---------------------------------------------------------------------------
-  // 증강
+  // 메뉴 / 증강
   // ---------------------------------------------------------------------------
+  private openMenu(panel: MenuData['panel'] = 'pause'): void {
+    if (this.dead || this.scene.isActive('menu')) return;
+    this.scene.pause();
+    this.scene.launch('menu', { from: 'sandbox', panel } satisfies MenuData);
+  }
+
   private openAugments(): void {
     const choices = rollAugments(3, this.taken);
     if (!choices.length) return;

@@ -8,7 +8,8 @@ import { EDITION, IS_DEMO, PLATFORM, VERSION } from '../config/build';
 import { FONT } from '../art/fonts';
 import { SkillBar, type BarSlot, type BarState } from '../ui/SkillBar';
 import { cutIn } from '../ui/announce';
-import { HERO_NAMES, SKILLS, SKILL_KEYS, type HeroKey } from '../skills';
+import { HERO_NAMES, SKILLS, type HeroKey } from '../skills';
+import { actionKey, bindingsRev, controlsHint } from '../input/bindings';
 import { RARITY_INFO, type AugmentDef } from '../augments/augments';
 
 export interface HudState {
@@ -36,6 +37,7 @@ export class HudScene extends Phaser.Scene {
   private hpText!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
   private hero?: HeroKey;
+  private keysRev = -1;
   private wave = 0;
   private shownHp = 0;
   private lastHp = 0;
@@ -52,6 +54,7 @@ export class HudScene extends Phaser.Scene {
   /** 재시작 때마다 호출 — 같은 씬 객체를 재사용하므로 이전 판의 상태를 지운다 */
   init(): void {
     this.hero = undefined;
+    this.keysRev = -1;
     this.wave = 0;
     this.shownHp = 0;
     this.lastHp = 0;
@@ -110,7 +113,7 @@ export class HudScene extends Phaser.Scene {
     this.bossText.setVisible(true).setText(`${name}  ·  ${phase}페이즈`);
   }
 
-  /** 증강 선택 (카드 3장). ←→ 또는 1·2·3 으로 고르고 Space·Enter·Z 로 확정, 마우스 클릭도 가능 */
+  /** 증강 선택 (카드 3장). ←→·A D 또는 1·2·3 으로 고르고 Space·Enter 로 확정, 마우스로 가리키고 클릭해도 된다 */
   showAugments(choices: AugmentDef[], wave: number, onPick: (a: AugmentDef) => void): void {
     const D = DEPTH.cutin + 5;
     const ADD = Phaser.BlendModes.ADD;
@@ -125,7 +128,7 @@ export class HudScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(D + 1);
     const hint = this.add
-      .text(VIEW_W / 2, VIEW_H - 16, '←→ 선택   Space 확정   (1·2·3 바로 선택)', { ...TEXT, color: '#a8a0c0' })
+      .text(VIEW_W / 2, VIEW_H - 16, 'A D·←→ 선택   Space 확정   1·2·3 바로 선택   클릭으로도 선택', { ...TEXT, color: '#a8a0c0' })
       .setOrigin(0.5)
       .setDepth(D + 1);
     const W = 156;
@@ -197,15 +200,25 @@ export class HudScene extends Phaser.Scene {
     handlers.push(
       ['keydown-LEFT', () => move(-1)],
       ['keydown-RIGHT', () => move(1)],
+      ['keydown-A', () => move(-1)],
+      ['keydown-D', () => move(1)],
       ['keydown-ONE', () => pick(0)],
       ['keydown-TWO', () => pick(1)],
       ['keydown-THREE', () => pick(2)],
       ['keydown-SPACE', () => pick(sel)],
       ['keydown-ENTER', () => pick(sel)],
-      ['keydown-Z', () => pick(sel)],
     );
     handlers.forEach(([e, fn]) => kb.on(e, fn));
-    cards.forEach((cd, i) => cd.c.on('pointerdown', () => pick(i)));
+    cards.forEach((cd, i) => {
+      cd.c.on('pointerover', () => {
+        if (!ready || picked || sel === i) return;
+        sel = i;
+        highlight();
+      });
+      cd.c.on('pointerdown', (p: Phaser.Input.Pointer) => {
+        if (p.button === 0) pick(i);
+      });
+    });
   }
 
   /** 게임 오버 (목숨은 하나) — 도달 웨이브·처치 수 + 재도전 안내 */
@@ -225,7 +238,7 @@ export class HudScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(DEPTH.cutin + 1);
     const prompt = this.add
-      .text(VIEW_W / 2, 226, 'SPACE 를 눌러 다시 도전', { fontFamily: FONT.body, fontSize: '22px', color: '#ffffff', stroke: '#140c1c', strokeThickness: 5 })
+      .text(VIEW_W / 2, 226, `${actionKey('jump')} 를 눌러 다시 도전`, { fontFamily: FONT.body, fontSize: '22px', color: '#ffffff', stroke: '#140c1c', strokeThickness: 5 })
       .setOrigin(0.5)
       .setDepth(DEPTH.cutin + 1);
     this.tweens.add({ targets: prompt, alpha: 0.25, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
@@ -262,12 +275,13 @@ export class HudScene extends Phaser.Scene {
     const dt = Math.min(deltaMs, 50) / 1000;
     const s = src.hudState();
 
-    if (s.hero !== this.hero) {
+    if (s.hero !== this.hero || this.keysRev !== bindingsRev()) {
       this.hero = s.hero;
+      this.keysRev = bindingsRev();
       this.skillBar.setHero(s.hero);
       const k = SKILLS[s.hero];
       this.help.setText(
-        `${HERO_NAMES[s.hero]}  ${(['skill1', 'skill2', 'skill3', 'ult'] as const).map((sl) => `${SKILL_KEYS[sl]} ${k[sl].name}`).join(' · ')}`,
+        `${HERO_NAMES[s.hero]}  ${(['skill1', 'skill2', 'skill3', 'ult'] as const).map((sl) => `${actionKey(sl)} ${k[sl].name}`).join(' · ')}`,
       );
     }
     this.skillBar.update(dt, s.bar, time);
@@ -302,7 +316,7 @@ export class HudScene extends Phaser.Scene {
       this.infoT = 0.25;
       this.info.setText([
         `냥생은 한 번뿐 v${VERSION} · ${EDITION.toUpperCase()} · ${PLATFORM.toUpperCase()} · ${Math.round(this.game.loop.actualFps)}fps`,
-        '이동 ←→  대시 ←← →→ / Shift  점프 Space  공격 Ctrl(연타 콤보, ↑+공격)  스킬 Z·X·C  궁극기 V  직업 1·2',
+        `${controlsHint()}  직업 1·2`,
       ]);
     }
   }

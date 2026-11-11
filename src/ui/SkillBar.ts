@@ -1,21 +1,15 @@
 /**
- * 하단 스킬바: [X 공격] [Q] [W] [E] [R 궁극기] [Shift 대시]
+ * 하단 스킬바: [공격] [스킬1] [스킬2] [스킬3] [궁극기] [대시] — 단축키 글자는 키 설정(bindings)을 따라 바뀐다
  * 아이콘 + 단축키 + 쿨타임 커튼/초 + 궁극기 게이지(가득 차면 금빛 점멸) + 사용/거부 피드백
  */
 import type Phaser from 'phaser';
 import { DEPTH, VIEW_H } from '../config/game';
 import { FONT } from '../art/fonts';
 import type { HeroKey } from '../skills';
+import { actionKey, bindingsRev } from '../input/bindings';
 
 export type BarSlot = 'attack' | 'skill1' | 'skill2' | 'skill3' | 'ult' | 'dash';
-const ORDER: readonly { slot: BarSlot; key: string }[] = [
-  { slot: 'attack', key: 'Ctrl' },
-  { slot: 'skill1', key: 'Z' },
-  { slot: 'skill2', key: 'X' },
-  { slot: 'skill3', key: 'C' },
-  { slot: 'ult', key: 'V' },
-  { slot: 'dash', key: 'Sft' },
-];
+const ORDER: readonly BarSlot[] = ['attack', 'skill1', 'skill2', 'skill3', 'ult', 'dash'];
 
 export interface BarState {
   cd: Record<BarSlot, number>;
@@ -40,10 +34,11 @@ interface SlotView {
 
 export class SkillBar {
   private readonly views: SlotView[] = [];
+  private keysRev = -1;
 
   constructor(scene: Phaser.Scene) {
     let x = 10;
-    for (const { slot, key } of ORDER) {
+    for (const slot of ORDER) {
       // 땅 띠(y 328~360) 안에 들어가도록 — 캐릭터 발(y 328)을 가리지 않는다
       const size = slot === 'ult' ? 26 : 24;
       const y = VIEW_H - 4 - size;
@@ -62,7 +57,7 @@ export class SkillBar {
           3,
         ),
         keyText: fixed(
-          scene.add.text(x - 3, y - 4, key, { fontFamily: FONT.small, fontSize: '9px', color: '#fff1c8', stroke: '#140c1c', strokeThickness: 3 }),
+          scene.add.text(x - 3, y - 4, '', { fontFamily: FONT.small, fontSize: '9px', color: '#fff1c8', stroke: '#140c1c', strokeThickness: 3 }),
           3,
         ),
         flashT: 0,
@@ -90,6 +85,10 @@ export class SkillBar {
   }
 
   update(dt: number, s: BarState, time: number): void {
+    if (this.keysRev !== bindingsRev()) {
+      this.keysRev = bindingsRev();
+      for (const v of this.views) v.keyText.setText(actionKey(v.slot, true));
+    }
     for (const v of this.views) {
       v.flashT -= dt;
       v.shakeT -= dt;

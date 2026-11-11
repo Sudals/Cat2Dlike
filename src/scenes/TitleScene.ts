@@ -1,5 +1,5 @@
 /**
- * 타이틀 화면 (웹 버전) — Space 또는 클릭으로 시작
+ * 타이틀 화면 (웹 버전) — Space·Enter 또는 클릭으로 시작, Esc 또는 [키 설정] 버튼으로 키 설정
  * 웹에서는 페이지에 키보드 포커스가 잡히고 (향후) 오디오 재생 허가를 받는 관문 역할도 한다.
  */
 import Phaser from 'phaser';
@@ -7,6 +7,9 @@ import { VIEW_H, VIEW_W } from '../config/game';
 import { IS_DEMO, VERSION } from '../config/build';
 import { FONT } from '../art/fonts';
 import { HERO_FOOT_Y, HERO_FRAME_H } from '../art/sprites/cat';
+import { controlsHint } from '../input/bindings';
+import { raw } from '../input/RawInput';
+import type { MenuData } from './MenuScene';
 
 const GROUND_Y = 328;
 
@@ -16,6 +19,9 @@ export class TitleScene extends Phaser.Scene {
   private near!: Phaser.GameObjects.TileSprite;
   private heroes: Phaser.GameObjects.Sprite[] = [];
   private prompt!: Phaser.GameObjects.Text;
+  private hint!: Phaser.GameObjects.Text;
+  /** 메뉴를 닫은 직후 그 키/클릭이 곧바로 게임 시작으로 이어지지 않게 */
+  private blockUntil = 0;
 
   constructor() {
     super('title');
@@ -77,16 +83,50 @@ export class TitleScene extends Phaser.Scene {
     this.tweens.add({ targets: this.prompt, alpha: 0.25, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
 
     const small = { fontFamily: FONT.small, fontSize: '9px', color: '#e8e0ff', stroke: '#140c1c', strokeThickness: 3 };
-    this.add.text(VIEW_W / 2, VIEW_H - 14, '이동 ←→  대시 ←← →→ / Shift  점프 Space  공격 Ctrl  스킬 Z·X·C  궁극기 V', small).setOrigin(0.5);
+    this.hint = this.add.text(VIEW_W / 2, VIEW_H - 14, controlsHint(), small).setOrigin(0.5);
+
+    const keysBtn = this.add
+      .text(VIEW_W / 2, 210, '[ 키 설정 · Esc ]', { fontFamily: FONT.body, fontSize: '11px', color: '#e8e0ff', stroke: '#140c1c', strokeThickness: 3 })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+    keysBtn.on('pointerover', () => keysBtn.setColor('#ffd08a'));
+    keysBtn.on('pointerout', () => keysBtn.setColor('#e8e0ff'));
+    keysBtn.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      if (p.button === 0) this.time.delayedCall(0, () => this.openKeys());
+    });
     this.add.text(VIEW_W - 8, 6, `v${VERSION}${IS_DEMO ? '  WEB DEMO' : ''}`, { ...small, color: '#ffd08a' }).setOrigin(1, 0);
 
-    this.input.keyboard!.on('keydown-SPACE', () => this.start());
-    this.input.on('pointerdown', () => this.start());
+    const off = raw.onPress((b) => {
+      if (!this.sys.isActive() || this.started) return false;
+      if (b === 'Escape') this.time.delayedCall(0, () => this.openKeys());
+      else if (b === 'Space' || b === 'Enter' || b === 'NumpadEnter') this.start();
+      else return false;
+      return true;
+    });
+    const onResume = () => {
+      this.blockUntil = performance.now() + 200;
+      this.hint.setText(controlsHint());
+    };
+    this.events.on(Phaser.Scenes.Events.RESUME, onResume);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      off();
+      this.events.off(Phaser.Scenes.Events.RESUME, onResume);
+    });
+    this.input.on('pointerdown', (p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
+      if (p.button === 0 && over.length === 0) this.start();
+    });
+    if (location.hash.includes('keys')) this.time.delayedCall(500, () => this.openKeys()); // 테스트용
     this.cameras.main.fadeIn(400, 5, 3, 10);
   }
 
+  private openKeys(): void {
+    if (this.started || this.scene.isActive('menu') || !this.sys.isActive()) return;
+    this.scene.pause();
+    this.scene.launch('menu', { from: 'title', panel: 'keys' } satisfies MenuData);
+  }
+
   private start(): void {
-    if (this.started) return;
+    if (this.started || performance.now() < this.blockUntil || !this.sys.isActive()) return;
     this.started = true;
     this.tweens.killTweensOf(this.prompt);
     this.prompt.setAlpha(1).setText('시작!').setColor('#ffd08a');

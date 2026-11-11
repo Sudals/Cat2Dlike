@@ -8,7 +8,6 @@ export const SKILLS: Record<HeroKey, Record<SkillSlot, SkillDef>> = {
   mage: { skill1: FIREBALL, skill2: THUNDER, skill3: FROST, ult: MOONFALL },
 };
 
-export const SKILL_KEYS: Record<SkillSlot, string> = { skill1: 'Z', skill2: 'X', skill3: 'C', ult: 'V' };
 
 export const HERO_NAMES: Record<HeroKey, string> = { blade: '검객', mage: '마법사' };
 

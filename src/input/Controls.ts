@@ -1,54 +1,45 @@
 /**
  * 액션 기반 입력 레이어. 게임 로직은 키가 아닌 액션만 본다 → 리바인딩/패드 지원이 한곳에서 끝남.
- * 배치: 오른손 방향키 이동 / 왼손 Ctrl 공격 + Z X C 스킬 + V 궁극기 + Space 점프 + Shift 대시
- * 방향키를 빠르게 두 번 누르면 그 방향으로 대시 (Shift 도 대시), ↑ 누른 채 공격 = 위 공격
+ * 키 배치는 bindings.ts (키 설정 화면에서 변경, 저장됨). 기본: WASD 이동 + Space 점프 + 좌클릭 공격 +
+ * Shift/우클릭 대시 + Q E R 스킬 + F 궁극기. 이동키를 빠르게 두 번 눌러도 대시, W 누른 채 공격 = 위 공격
  */
-import Phaser from 'phaser';
+import type Phaser from 'phaser';
+import { ACTIONS, bindings, type Action } from './bindings';
+import { raw } from './RawInput';
 
-export type Action = 'left' | 'right' | 'up' | 'down' | 'jump' | 'attack' | 'dash' | 'skill1' | 'skill2' | 'skill3' | 'ult';
+export type { Action } from './bindings';
 
-const KEYMAP: Record<Action, string[]> = {
-  left: ['LEFT'],
-  right: ['RIGHT'],
-  up: ['UP'],
-  down: ['DOWN'],
-  jump: ['SPACE'],
-  attack: ['CTRL'],
-  dash: ['SHIFT'],
-  skill1: ['Z'],
-  skill2: ['X'],
-  skill3: ['C'],
-  ult: ['V'],
-};
-
-const ACTIONS = Object.keys(KEYMAP) as Action[];
 const DOUBLE_TAP = 0.26; // 초
 
 export class Controls {
-  private keys: Record<Action, Phaser.Input.Keyboard.Key[]>;
   private down = new Set<Action>();
   private prev = new Set<Action>();
+  /** 바인딩별 마지막으로 본 누름 횟수 — 프레임 사이에 눌렀다 뗀 짧은 클릭도 1프레임 눌림으로 친다 */
+  private seen = new Map<string, number>();
   private lastTap: Record<'left' | 'right', number> = { left: -1, right: -1 };
   private fresh = true;
   /** 자동 플레이(스모크 테스트) 등 외부에서 주입하는 가상 입력 */
   readonly virtual = new Set<Action>();
   axisX = 0;
-  /** 이번 프레임에 방향키를 두 번 눌렀으면 그 방향(-1/1), 아니면 0 → 대시 */
+  /** 이번 프레임에 이동키를 두 번 눌렀으면 그 방향(-1/1), 아니면 0 → 대시 */
   dashTap = 0;
 
-  constructor(private scene: Phaser.Scene) {
-    const kb = scene.input.keyboard!;
-    this.keys = Object.fromEntries(
-      ACTIONS.map((a) => [a, KEYMAP[a].map((k) => kb.addKey(Phaser.Input.Keyboard.KeyCodes[k as keyof typeof Phaser.Input.Keyboard.KeyCodes]))]),
-    ) as Record<Action, Phaser.Input.Keyboard.Key[]>;
-  }
+  constructor(private scene: Phaser.Scene) {}
 
   /** 매 프레임 씬 update 시작 시 1회 호출 */
   update(): void {
     [this.prev, this.down] = [this.down, this.prev];
     this.down.clear();
+    const map = bindings();
     for (const a of ACTIONS) {
-      if (this.keys[a].some((k) => k.isDown) || this.virtual.has(a)) this.down.add(a);
+      for (const b of map[a]) {
+        if (!b) continue;
+        const n = raw.pressCount(b);
+        const last = this.seen.get(b);
+        if (raw.isHeld(b) || (last !== undefined && n !== last)) this.down.add(a);
+        this.seen.set(b, n);
+      }
+      if (this.virtual.has(a)) this.down.add(a);
     }
 
     const pad = this.scene.input.gamepad?.pad1;
@@ -77,7 +68,7 @@ export class Controls {
     const digital = (this.down.has('right') ? 1 : 0) - (this.down.has('left') ? 1 : 0);
     this.axisX = digital !== 0 ? digital : stickX;
 
-    // 같은 방향키 두 번 = 대시
+    // 같은 이동키 두 번 = 대시
     const now = performance.now() / 1000;
     this.dashTap = 0;
     for (const d of ['left', 'right'] as const) {
@@ -91,9 +82,10 @@ export class Controls {
     }
   }
 
-  /** 일시정지 해제 등: 지금 눌려 있는 키를 '새로 누름'으로 치지 않게 한다 */
+  /** 일시정지 해제 등: 지금 눌려 있는 키, 멈춘 동안 누른 키를 '새로 누름'으로 치지 않게 한다 */
   reset(): void {
     this.fresh = true;
+    this.seen.clear();
   }
 
   isDown(a: Action): boolean {
