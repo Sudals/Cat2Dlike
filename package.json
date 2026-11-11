@@ -1,0 +1,61 @@
+{
+  "name": "nyan-only-lives-once",
+  "productName": "냥생은 한 번뿐",
+  "version": "0.1.0",
+  "private": true,
+  "description": "냥생은 한 번뿐 — 고양이 주인공 2D 횡스크롤 로그라이크 (Electron 정식판 + 웹 체험판)",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "dev:demo": "vite --mode demo",
+    "dev:electron": "concurrently -k -n vite,electron -c magenta,cyan \"vite\" \"wait-on tcp:127.0.0.1:5173 && cross-env ELECTRON_DEV_URL=http://127.0.0.1:5173 node scripts/run-electron.mjs\"",
+    "typecheck": "tsc --noEmit",
+    "build:full": "tsc --noEmit && vite build --mode full",
+    "build:web": "tsc --noEmit && vite build --mode demo",
+    "preview:web": "vite preview --mode demo",
+    "start": "node scripts/run-electron.mjs",
+    "smoke": "npm run build:full && cross-env SMOKE_SCREENSHOT=release/smoke.png node scripts/run-electron.mjs",
+    "dist:win": "npm run build:full && electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "com.nyanlife.game",
+    "productName": "냥생은 한 번뿐",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "NyanOnlyLivesOnce-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "NyanOnlyLivesOnce-Portable-${version}.${ext}"
+    }
+  },
+  "dependencies": {
+    "galmuri": "^2.40.3",
+    "phaser": "^4.2.1"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.7",
+    "cross-env": "^10.1.0",
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.7",
+    "wait-on": "^9.5.1"
+  }
+}
